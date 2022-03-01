@@ -1,24 +1,52 @@
-# import requests
-# url = 'https://rest.coinapi.io/v1/exchangerate/BTC/USD/history?period_id=10DAY&time_start=2016-01-01T00:00:00&time_end=2016-02-01T00:00:00'
-# headers1 = {'X-CoinAPI-Key' : '936B9382-C258-47E3-9C92-6C20309830A7'}
-# response = requests.get(url, headers=headers1)
-
-# print(response.text)
-from dash import Dash, html, dcc, dash_table, Input, Output
+# Proper improts
+from dash import Dash, html, dcc, dash_table, Input, Output, State
 import requests
 import pandas as pd
 import plotly.express as px
 import dash_bootstrap_components as dbc
 
+# Load local data (THIS IS OLD FROM TESTING)
+# definitions = pd.read_csv("definitions.csv")
+
+
+
+############### MICROSERVICE #################
+# Get definitions from partner's microservice.
+# Market Cap Definition
+parameters1 = {"arg1": "market_capitalization"}
+response1 = requests.get("http://localhost:9000/wiki", params = parameters1)
+def1 = str(response1.json()["1"] + response1.json()["2"])
+sentences1 = def1.split(".")
+marketCapDef = (sentences1[0] + ". " + sentences1[1] + ".")
+
+# Price Chart (aka Run Chart) definition
+parameters2 = {"arg1": "run_chart"}
+response2 = requests.get("http://localhost:9000/wiki", params = parameters2)
+priceChartDef = response2.json()["0"]
+############### MICROSERVICE #################
+
+# Put microservice-based definitions into a dictionary for later table use
+definitions = {"Market Capitalization": marketCapDef, "Price Chart (Run Chart)": priceChartDef}
+defItems = definitions.items()
+defList = list(defItems)
+defTable = pd.DataFrame(defList)
+defTable.columns = ["Term", "Definitions"]
+
+
+
+
+# Styling
 colors = {
     'background': '#111111',
     'text': '#7FDBFF'
 }
 
-definitions = pd.read_csv("definitions.csv")
-definitions.to_csv("testDefs.csv")
-print(definitions)
+# What's new descriptions
+whatIsNew = "Due to data licensing and/or regulatory concerns, the following are not being shown: 1) Luna and 2) Ripple"
 
+# Function Declation: 
+# - Generate main price chart
+# - Calls API for each currency
 def genLineChart(identifier):
     url = 'http://api.coincap.io/v2/assets/' + identifier + '/history?interval=d1'
     response = requests.get(url)
@@ -28,50 +56,59 @@ def genLineChart(identifier):
     figToReturn.update_layout(title_x=0.5)
     return figToReturn
 
-
+# Obtain main API call
 url = 'http://api.coincap.io/v2/assets'
 response = requests.get(url)
-
-
-
-app = Dash(__name__, external_stylesheets=[dbc.themes.LITERA])
-
 dataframe = response.json()['data']
 
-# marketCap = pd.DataFrame(columns=["Coin", "Market Cap"], index = "Coin")
-test = list()
+# Arrange data into proper tabular form for easier use
+tabularData = list()
+count = 0
+i = 0
+while(count < 10):
+    if (dataframe[i]['name'] != 'XRP' and dataframe[i]['name'] != "Terra" and dataframe[i]['name'] != 'USD Coin' and dataframe[i]['name'] != 'Binance USD'):
+        tabularData.append((dataframe[i]['id'], dataframe[i]['symbol'], dataframe[i]['name'], round(float(dataframe[i]['marketCapUsd'])/1000000, 2)))
+        count = count + 1
+    i = i + 1
 
-for i in range(10):
-    # print(dataframe[i]['symbol'])
-    # print(dataframe[i]['marketCapUsd'])
-    test.append((dataframe[i]['id'], dataframe[i]['symbol'], dataframe[i]['name'], round(float(dataframe[i]['marketCapUsd'])/1000000, 2)))
-# print(response.json()['data'][1])
+tabularData = pd.DataFrame(data=tabularData, columns=["ID", "Symbol", "Name", "Market Cap"])
+tabularData2 = tabularData.copy()
+tabularData2.drop(columns=['ID'], inplace=True)
+tabularData2.rename(columns={'Market Cap': 'Market Cap ($billions)'}, inplace=True)
 
-test = pd.DataFrame(data=test, columns=["ID", "Symbol", "Name", "Market Cap"])
-# test2 = pd.DataFrame(data=prices, columns=["Price", "Date"])
-test2 = test.copy()
-test2.drop(columns=['ID'], inplace=True)
 
-print(test2)
+# Create Dash application
+app = Dash(__name__, external_stylesheets=[dbc.themes.LITERA])
 
-fig = px.pie(test, values = 'Market Cap', names = 'Name')
-
-# dataframe2["priceUsd"] = dataframe2['priceUsd'].astype(float)
-fig2 = genLineChart('bitcoin')
+# Generate starting graphs
+marketCapChart = px.pie(tabularData, values = 'Market Cap', names = 'Name')
+priceChart= genLineChart('bitcoin')
 
 
 app.layout = html.Div(children=[
     html.H1(children='Cryptocurrency Dashboard', style={'text-align':'center'}),
 
     html.Div(children='Basic Market Data\n\n', style={'text-align':'center'}),
-    html.Button("Market Capitalization Data", style={'horizontalAlign':'middle'}),
-    html.Button("Price Charts"),
-    html.Button("What's New?"),
-    html.Hr(style={'height':'10px'}),
+    html.A(html.Button("Market Capitalization Data", style={'horizontalAlign':'middle'}), href='#pieChartLabel'),
+    html.A(html.Button("Price Charts"), href="#priceChart"),
+    html.Button("What's New?", id="open"),
+    dbc.Modal(
+        [
+            dbc.ModalHeader("What's New?"),
+            dbc.ModalBody(html.Div(whatIsNew)),
+            dbc.ModalFooter(
+                dbc.Button("Close", id="close", className="ml-auto")
+            ),
+        ],
+        id="modal",
+    ) ,
+
+
+    html.Hr(style={'height':'15px'}),
 
     dash_table.DataTable(
-    definitions.to_dict('records'),
-    [{"name": i, "id": i} for i in definitions.columns],
+    defTable.to_dict('records'),
+    [{"name": i, "id": i} for i in defTable.columns],
     style_cell={'padding': '5px', 'whiteSpace':'normal', 'textAlign':'left'},
     style_header={
         'backgroundColor': 'white',
@@ -80,19 +117,19 @@ app.layout = html.Div(children=[
     },
 ),
 
-    html.Hr(style={'height':'10px'}),
+    html.Hr(style={'height':'15px'}),
 
-    html.H4("Top 10 Largest Cryptocurencies - Current Data", style={'text-align':'center'}),
+    html.H4("Top 10 Largest Cryptocurencies - Current Data", id = "pieChartLabel", style={'text-align':'center'}),
 
     dcc.Graph(
         id='example-graph',
-        figure=fig
+        figure=marketCapChart
     ),
     html.Div(" "),
 
     dash_table.DataTable(
-    test2.to_dict('records'),
-    [{"name": i, "id": i} for i in test2.columns],
+    tabularData2.to_dict('records'),
+    [{"name": i, "id": i} for i in tabularData2.columns],
     style_cell={'padding': '5px'},
     style_header={
         'backgroundColor': 'white',
@@ -100,31 +137,49 @@ app.layout = html.Div(children=[
     },
     fill_width=False
 ),
-    html.Hr(style={'height':'10px'}),
+    html.Hr(style={'height':'15px'}),
 
     dcc.Dropdown(
-        options=['bitcoin', 'ethereum'],
+        options=tabularData["Name"],
         id="dropdownID",
-        value = 'bitcoin'
+        value = 'Bitcoin'
     ),
     html.Div(id='dd-output-container'),
 
     dcc.Graph(
-        id="Bitcoin Price",
-        figure = fig2)
+        id="priceChart",
+        figure=priceChart)
 
 ])
 
 
-# @app.callback(
-#     Output('dd-output-container', 'children'),
-#     Input('dropdownID', 'value')
-# )
+@app.callback(
+    Output('priceChart', 'figure'),
+    Input('dropdownID', 'value')
+)
+def update_output(value):
+    if (value == "BNB"):
+        fig3 = genLineChart('binance-coin')
+    elif (value == "Shiba Inu"):
+        fig3 = genLineChart('shiba-inu')
+    else:
+        fig3 = genLineChart(value.lower())
 
-# def update_output(value):
-#     fig2 = genLineChart(value)
+    return fig3
 
-# print(test2)
+
+
+@app.callback(
+    Output("modal", "is_open"),
+    [Input("open", "n_clicks"), Input("close", "n_clicks")],
+    [State("modal", "is_open")],
+)
+def toggle_modal(n1, n2, is_open):
+    if n1 or n2:
+        return not is_open
+    return is_open
+
+
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(port=8125, debug=True)
