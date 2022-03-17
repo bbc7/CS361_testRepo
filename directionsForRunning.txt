@@ -1,0 +1,11 @@
+My project consists of two files:
+1) cyrptoDash.py (i.e., the main for my project)
+2) defMicro.py (my partner's microservice)
+
+Use the following to run:
+python3 defMicro.py
+python3 cryptoDash.py
+
+
+
+deflatorMicro.py == my microservice that my partner then used
