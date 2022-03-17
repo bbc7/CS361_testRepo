@@ -6,6 +6,7 @@
 
 from flask import Flask, json, request
 import pandas as pd
+from flask_cors import CORS
 
 
 # Load deflation factors (downloaded from BLS website)
@@ -14,6 +15,7 @@ deflator.set_index("Year", inplace=True)
 
 # Create basic Flask object
 api = Flask(__name__)
+CORS(api)
 
 # Only using the 'deflation' route handler | no others will be implemented for this microservice.
 @api.route('/deflation', methods=['GET'])
